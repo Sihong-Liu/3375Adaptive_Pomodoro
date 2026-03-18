@@ -1,0 +1,164 @@
+    #define LED_BASE	       0xFF200000
+    #define HEX3_HEX0          0xFF200020
+    #define HEX5_HEX4          0xFF200030
+    #define SW_BASE            0xFF200040
+    #define LOAD               0xFFFEC600
+    #define COUNT              0xFFFEC604
+    #define CONTROL            0xFFFEC608
+    #define STATUS             0xFFFEC60C
+    #define KEYS               0xFF200050
+    #define KEY_ACTIVE_LOW 1
+    volatile unsigned int stored_time;
+    volatile unsigned int elapse;
+    volatile char is_running;
+    volatile unsigned char hundredth_second; //represents 0.01s place
+    volatile unsigned char tenth_second; //represents 0.1s place
+    volatile unsigned char second; //represents 1s place
+    volatile unsigned char ten_second; //represents 10s place
+    volatile unsigned char minute; //represents 1min place
+    volatile unsigned char ten_minute; //represents 10min place
+    //setting the control register globally
+    volatile unsigned int *control_ptr = (volatile unsigned int *) CONTROL;
+    volatile unsigned int *load_ptr = (volatile unsigned int *) LOAD;
+    volatile unsigned int *count_ptr = (volatile unsigned int *) COUNT;
+    volatile unsigned int *status_ptr = (volatile unsigned int *) STATUS;
+    volatile unsigned int *sw0_ptr = (volatile unsigned int *) SW_BASE;
+    volatile unsigned int *keys_ptr = (volatile unsigned int *) KEYS;
+    volatile unsigned int *hex3_hex0_ptr = (volatile unsigned int *) HEX3_HEX0;
+    volatile unsigned int *hex5_hex4_ptr = (volatile unsigned int *) HEX5_HEX4;
+
+
+
+    void DisplayHex(unsigned int value)
+    {
+        //this code has to break elapse apart into minutes, seconds, and 10ths of seconds for display
+        //Then, the code has to display the correct brokwn up divisions of elapse into the correct slots.
+        //The value 1943.52s represents 32 minutes, 23 seconds, and 520ms. so, elapse = 194352
+        //use that example to run calculations
+        unsigned int cs = value % 100;        // 52 cs
+        unsigned int s  = (value / 100) % 60; // 23 seconds
+        unsigned int m  = (value / 6000) % 100; //32 minutes
+
+        hundredth_second = cs % 10; //2
+        tenth_second     = cs / 10; //5
+        second           = s % 10; //3
+        ten_second       = s / 10; //2
+        minute           = m % 10; //2
+        ten_minute       = m / 10; //3
+
+        static const unsigned char seven_seg[10] = {
+            0x3F, // 0
+            0x06, // 1
+            0x5B, // 2
+            0x4F, // 3
+            0x66, // 4
+            0x6D, // 5
+            0x7D, // 6
+            0x07, // 7
+            0x7F, // 8
+            0x6F, // 9
+        };
+
+        unsigned int display_word1 = (seven_seg[ten_second]       << 24) |
+                            (seven_seg[second]           << 16) |
+                            (seven_seg[tenth_second]     << 8)  |
+                            (seven_seg[hundredth_second]); //
+        *hex3_hex0_ptr = display_word1;
+
+        unsigned int display_word2 = (seven_seg[ten_minute]   <<8)|
+                                (seven_seg[minute]);
+        *hex5_hex4_ptr = display_word2;
+    }
+
+
+
+    int ReadKeys(void)// this function will read the keys and return a 4 bit value representing which keys are pressed. The value will be 0 if no keys are pressed, 1 if key0 is pressed, 2 if key1 is pressed, 4 if key2 is pressed, and 8 if key3 is pressed. If multiple keys are pressed, the value will be the sum of the values for each key. For example, if key0 and key2 are pressed, the value will be 5 (1 + 4).
+    {
+        int keys = *keys_ptr & 0b1111;
+        return keys;
+    }
+
+    void DisplaySelectedTime(void)
+    {
+        if ((*sw0_ptr & 0x1) != 0)
+        {
+            DisplayHex(stored_time);
+        }
+        else
+        {
+            DisplayHex(elapse);
+        }
+        
+    }
+
+    void key0(void){
+        
+        *control_ptr |= 0b1;
+        if (*status_ptr & 0x1)
+        {
+            elapse++;
+            *status_ptr = 0x1; 
+        }
+        DisplaySelectedTime();
+    }
+    void key1(void)
+    {
+        *control_ptr &= ~1u; 
+        DisplaySelectedTime();
+        is_running = 0;
+    }
+    void key2(void)
+    {
+        stored_time = elapse;
+    }
+
+    void key3(void)
+    { 
+        key1();
+        
+        *status_ptr = 1;
+        elapse = 0;
+        stored_time = 0;
+    }
+
+
+
+    int main(void) {
+
+        elapse = 0;
+        stored_time = 0;
+        is_running = 0;
+        //setting the preload register. This will be reinitialized at every iteration of main.
+        *load_ptr = 10000;
+        *control_ptr = 0b1100011100000010;
+        int keys;
+        while (1)
+        {
+            keys = ReadKeys();
+            if (keys == 0b0100)
+            {
+                key2();
+            }
+            if (keys == 0b1000)
+            {
+                key3();
+            }
+            if (is_running)
+            {
+                key0();
+            }
+            else
+            {
+                key1();
+            }
+            if (keys == 0b0001)
+            {
+                is_running = 1;
+            }
+            if (keys == 0b0010)
+            {
+                is_running = 0;
+            }
+            
+        }
+    }

@@ -69,3 +69,22 @@ void DisplayHex(unsigned int value)
         unsigned int display_word3 = (seven_seg[hour]); //hour
         *hex5_hex4_ptr = display_word3;
     }
+
+    int ReadKeys(void)// this function will read the keys and return a 4 bit value representing which keys are pressed. The value will be 0 if no keys are pressed, 1 if key0 is pressed, 2 if key1 is pressed, 4 if key2 is pressed, and 8 if key3 is pressed. If multiple keys are pressed, the value will be the sum of the values for each key. For example, if key0 and key2 are pressed, the value will be 5 (1 + 4).
+    {
+        int keys = *keys_ptr & 0b1111;
+        return keys;
+    }
+
+    void DisplaySelectedTime(void)
+    {
+        if ((*sw0_ptr & 0x1) != 0)
+        {
+            DisplayHex(remaining_time);// if the switch is on, display the remaining time
+        }
+        else
+        {
+            DisplayHex(adapted_porodoro_time);// show total length of this porodoro session if the switch is off
+        }
+        
+    }
