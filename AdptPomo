@@ -98,6 +98,7 @@ void DisplayHex(unsigned int value)
         // it will use adapted_porodoro_time as the time to count down from and will set is_running to 1
         if (state==IDLE) // only start the timer if it's not already running
         {   
+            elapse = 0; // reset elapse to 0 when the timer is started
             remaining_time = adapted_porodoro_time; // set remaining_time to adapted_porodoro_time when the timer is started
             *load_ptr = adapted_porodoro_time; // load the timer with the adapted_porodoro_time
             *control_ptr |= 0b1;// start the timer in continuous mode
@@ -105,6 +106,7 @@ void DisplayHex(unsigned int value)
             if (*status_ptr & 0x1)
             {
                 remaining_time--;// decrement remaining_time by 1 hundredth of a second
+                elapse++;// increment elapse by 1 hundredth of a second
                 *status_ptr = 0x1; 
             }
             DisplaySelectedTime();
