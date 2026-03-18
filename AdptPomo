@@ -7,8 +7,8 @@
 #define COUNT              0xFFFEC604
 #define CONTROL            0xFFFEC608
 #define STATUS             0xFFFEC60C
-#define KEYS               0xFF200050
-#define KEY_ACTIVE_LOW 1
+#define BUTTONS            0xFF200050
+#define BUTTON_ACTIVE_LOW 1
 volatile unsigned int stored_time;
 volatile unsigned int elapse;
 volatile char is_running;
@@ -19,15 +19,15 @@ volatile unsigned char ten_minute; //represents 10min place
 volatile unsigned char hour; //represents 1hr place
 volatile unsigned int default_porodoro_time = 40 * 60 * 100; //40 minutes in hundredths of seconds as default.
 volatile unsigned int adapted_delta_time; // this will be the time that is added or subtracted from the default time based on the user's behaviour
-volatile unsigned int adapted_porodoro_time; // this need a logic to calculate the adapted time based on the user's behaviour and the default time
-volatile unsigned int remaining_time;  // this will be the time that is currently counting down, it will be set to adapted_porodoro_time when the timer starts and will count down to 0
+volatile unsigned int adapted_porodoro_time; // default_porodoro_time + adapted_delta_time.
+volatile unsigned int remaining_time;  // this will be the time that is currently counting down, it = adapted_porodoro_time when start button is pressed.
 //setting the control register globally
 volatile unsigned int *control_ptr = (volatile unsigned int *) CONTROL;
 volatile unsigned int *load_ptr = (volatile unsigned int *) LOAD;
 volatile unsigned int *count_ptr = (volatile unsigned int *) COUNT;
 volatile unsigned int *status_ptr = (volatile unsigned int *) STATUS;
 volatile unsigned int *sw0_ptr = (volatile unsigned int *) SW_BASE;
-volatile unsigned int *keys_ptr = (volatile unsigned int *) KEYS;
+volatile unsigned int *btns_ptr = (volatile unsigned int *) BUTTONS;
 volatile unsigned int *hex1_hex0_ptr = (volatile unsigned int *) HEX1_HEX0;
 volatile unsigned int *hex3_hex2_ptr = (volatile unsigned int *) HEX3_HEX2;
 volatile unsigned int *hex5_hex4_ptr = (volatile unsigned int *) HEX5_HEX4;
@@ -70,10 +70,10 @@ void DisplayHex(unsigned int value)
         *hex5_hex4_ptr = display_word3;
     }
 
-    int ReadKeys(void)// this function will read the keys and return a 4 bit value representing which keys are pressed. The value will be 0 if no keys are pressed, 1 if key0 is pressed, 2 if key1 is pressed, 4 if key2 is pressed, and 8 if key3 is pressed. If multiple keys are pressed, the value will be the sum of the values for each key. For example, if key0 and key2 are pressed, the value will be 5 (1 + 4).
+    int ReadBtns(void)// this function will read the keys and return a 4 bit value representing which keys are pressed. The value will be 0 if no keys are pressed, 1 if key0 is pressed, 2 if key1 is pressed, 4 if key2 is pressed, and 8 if key3 is pressed. If multiple keys are pressed, the value will be the sum of the values for each key. For example, if key0 and key2 are pressed, the value will be 5 (1 + 4).
     {
-        int keys = *keys_ptr & 0b1111;
-        return keys;
+        int btns = *btns_ptr & 0b1111;
+        return btns;
     }
 
     void DisplaySelectedTime(void)
@@ -87,4 +87,32 @@ void DisplayHex(unsigned int value)
             DisplayHex(adapted_porodoro_time);// show total length of this porodoro session if the switch is off
         }
         
+    }
+
+    void btn0_action(void)
+    {
+        // this function will be called when button 0 is pressed, it will start the timer
+        // it will use adapted_porodoro_time as the time to count down from and will set is_running to 1
+        if (!is_running) // only start the timer if it's not already running
+        {
+            remaining_time = adapted_porodoro_time; // set the remaining time to the adapted porodoro time
+            *load_ptr = remaining_time; // load the remaining time into the timer
+            *control_ptr = 0b11; // start the timer in continuous mode
+            is_running = 1; // set is_running to 1
+        }
+    }
+
+    void btn1_action(void){
+        // this function will be called when button 1 is pressed, it will stop the timer
+        // it is a indication of user want to take a break, 
+        //so then the function calculate new adapted_delta_time based on the remaining time and the default porodoro time, 
+        //then calculate new adapted_porodoro_time based on the adapted_delta_time and the default porodoro time
+    }
+
+    void btn2_action(){
+        // this function will be called when button 2 is pressed, it will reset the timer
+        // it will set is_running to 0 and clear adapted_delta_time and adapted_porodoro_time, and set remaining_time back to default_porodoro_time
+        *control_ptr &= ~1u; // stop the timer
+        DisplaySelectedTime(); // update the display to show the selected time
+        is_running = 0; // set is_running to 0
     }
