@@ -1,0 +1,71 @@
+#define LED_BASE	       0xFF200000
+#define HEX1_HEX0          0xFF200020 //for seconds
+#define HEX3_HEX2          0xFF200030 //for minutes
+#define HEX5_HEX4          0xFF200040 //for hours
+#define SW_BASE            0xFF200050
+#define LOAD               0xFFFEC600
+#define COUNT              0xFFFEC604
+#define CONTROL            0xFFFEC608
+#define STATUS             0xFFFEC60C
+#define KEYS               0xFF200050
+#define KEY_ACTIVE_LOW 1
+volatile unsigned int stored_time;
+volatile unsigned int elapse;
+volatile char is_running;
+volatile unsigned char second; //represents 1s place
+volatile unsigned char ten_second; //represents 10s place
+volatile unsigned char minute; //represents 1min place
+volatile unsigned char ten_minute; //represents 10min place
+volatile unsigned char hour; //represents 1hr place
+volatile unsigned int default_porodoro_time = 40 * 60 * 100; //40 minutes in hundredths of seconds as default.
+volatile unsigned int adapted_delta_time; // this will be the time that is added or subtracted from the default time based on the user's behaviour
+volatile unsigned int adapted_porodoro_time; // this need a logic to calculate the adapted time based on the user's behaviour and the default time
+volatile unsigned int remaining_time;  // this will be the time that is currently counting down, it will be set to adapted_porodoro_time when the timer starts and will count down to 0
+//setting the control register globally
+volatile unsigned int *control_ptr = (volatile unsigned int *) CONTROL;
+volatile unsigned int *load_ptr = (volatile unsigned int *) LOAD;
+volatile unsigned int *count_ptr = (volatile unsigned int *) COUNT;
+volatile unsigned int *status_ptr = (volatile unsigned int *) STATUS;
+volatile unsigned int *sw0_ptr = (volatile unsigned int *) SW_BASE;
+volatile unsigned int *keys_ptr = (volatile unsigned int *) KEYS;
+volatile unsigned int *hex1_hex0_ptr = (volatile unsigned int *) HEX1_HEX0;
+volatile unsigned int *hex3_hex2_ptr = (volatile unsigned int *) HEX3_HEX2;
+volatile unsigned int *hex5_hex4_ptr = (volatile unsigned int *) HEX5_HEX4;
+
+void DisplayHex(unsigned int value)
+    {
+        //this code has to break elapse apart into minutes, seconds, and 10ths of seconds for display
+        //Then, the code has to display the correct brokwn up divisions of elapse into the correct slots.
+        //The value 1943.52s represents 32 minutes, 23 seconds, and 520ms. so, elapse = 194352
+        //use that example to run calculations
+        unsigned int s  = (value / 100) % 60; // 23 seconds
+        unsigned int m  = (value / 6000) % 100; //32 minutes
+        unsigned int h  = (value / 360000) % 100; //1 hour
+        second           = s % 10; //3
+        ten_second       = s / 10; //2
+        minute           = m % 10; //2
+        ten_minute       = m / 10; //3
+        hour            =  h; //1 hour
+
+        static const unsigned char seven_seg[10] = {
+            0x3F, // 0
+            0x06, // 1
+            0x5B, // 2
+            0x4F, // 3
+            0x66, // 4
+            0x6D, // 5
+            0x7D, // 6
+            0x07, // 7
+            0x7F, // 8
+            0x6F, // 9
+        };
+
+        unsigned int display_word1 = (seven_seg[ten_second] << 8) | (seven_seg[second]); //second and ten second
+        *hex1_hex0_ptr = display_word1;
+
+        unsigned int display_word2 = (seven_seg[ten_minute] << 8) | (seven_seg[minute]); //minute and ten minute
+        *hex3_hex2_ptr = display_word2;
+
+        unsigned int display_word3 = (seven_seg[hour]); //hour
+        *hex5_hex4_ptr = display_word3;
+    }
