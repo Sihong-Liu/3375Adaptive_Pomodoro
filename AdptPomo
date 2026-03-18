@@ -96,11 +96,12 @@ void DisplayHex(unsigned int value)
     {
         // this function will be called when button 0 is pressed, it will start the timer
         // it will use adapted_porodoro_time as the time to count down from and will set is_running to 1
-        if (!is_running) // only start the timer if it's not already running
+        if (state==IDLE) // only start the timer if it's not already running
         {   
             remaining_time = adapted_porodoro_time; // set remaining_time to adapted_porodoro_time when the timer is started
             *load_ptr = adapted_porodoro_time; // load the timer with the adapted_porodoro_time
             *control_ptr |= 0b1;// start the timer in continuous mode
+            state = RUNNING; // set the state to RUNNING
             if (*status_ptr & 0x1)
             {
                 remaining_time--;// decrement remaining_time by 1 hundredth of a second
@@ -115,14 +116,28 @@ void DisplayHex(unsigned int value)
         // it is a indication of user want to take a break, 
         //so then the function calculate new adapted_delta_time based on the remaining time and the default porodoro time, 
         //then calculate new adapted_porodoro_time based on the adapted_delta_time and the default porodoro time
+        if(state == RUNNING){
+            *control_ptr &= ~1u; // stop the timer
+            state = IDLE; // set the state to IDLE
+            DisplaySelectedTime(); // update the display to show the selected time
+             // calculate new adapted_delta_time based on the remaining time and the default porodoro time
+            adapted_delta_time = //write some logic here;
+            adapted_porodoro_time = default_porodoro_time + adapted_delta_time; // calculate new adapted_porodoro_time based on the adapted_delta_time and the default porodoro time
+        }
     }
 
     void btn2_action(){
-        // this function will be called when button 2 is pressed, it will reset the timer
-        // it will set is_running to 0 and clear adapted_delta_time and adapted_porodoro_time, and set remaining_time back to default_porodoro_time
-        *control_ptr &= ~1u; // stop the timer
-        DisplaySelectedTime(); // update the display to show the selected time
-        is_running = 0; // set is_running to 0
+        if(state == IDLE){
+            // this function will be called when button 2 is pressed, it will reset the timer(need to press break first)
+            // it will set is_running to 0 and clear adapted_delta_time and adapted_porodoro_time, and set remaining_time back to default_porodoro_time
+            *control_ptr &= ~1u; // stop the timer
+            DisplaySelectedTime(); // update the display to show the selected time
+            state = IDLE; // set the state to IDLE
+            adapted_delta_time = 0; // clear adapted_delta_time
+            adapted_porodoro_time = default_porodoro_time; // reset adapted_porodoro_time to default_porodoro_time
+            remaining_time = default_porodoro_time; // set remaining_time back to default_porodoro_time
+            elapse = 0; // reset elapse to 0
+        }
     }
 
     void main(void)
@@ -146,10 +161,6 @@ void DisplayHex(unsigned int value)
             if (btns & 0b0100) // if button 2 is pressed
             {
                 btn2_action();
-            }
-            if (btns & 0b1000) // if button 3 is pressed
-            {
-                btn3_action();
             }
         }
     }
