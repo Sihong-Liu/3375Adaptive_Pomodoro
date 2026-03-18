@@ -91,12 +91,12 @@
         
     }
 
-    void key0(void){
+    void key0(void){// this function will be called when key 0 is pressed, it will start the timer
         
-        *control_ptr |= 0b1;
+        *control_ptr |= 0b1;// start the timer in continuous mode
         if (*status_ptr & 0x1)
         {
-            elapse++;
+            elapse++;// increment elapse by 1 hundredth of a second
             *status_ptr = 0x1; 
         }
         DisplaySelectedTime();
