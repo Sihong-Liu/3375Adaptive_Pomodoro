@@ -22,16 +22,19 @@ volatile unsigned int adapted_delta_time; // this will be the time that is added
 volatile unsigned int adapted_porodoro_time; // default_porodoro_time + adapted_delta_time.
 volatile unsigned int remaining_time;  // this will be the time that is currently counting down, it = adapted_porodoro_time when start button is pressed.
 //setting the control register globally
-volatile unsigned int *control_ptr = (volatile unsigned int *) CONTROL;
-volatile unsigned int *load_ptr = (volatile unsigned int *) LOAD;
-volatile unsigned int *count_ptr = (volatile unsigned int *) COUNT;
-volatile unsigned int *status_ptr = (volatile unsigned int *) STATUS;
+volatile unsigned int *control_ptr = (volatile unsigned int *) CONTROL;// this pointer will be used to start and stop the timer by writing to the control register
+volatile unsigned int *load_ptr = (volatile unsigned int *) LOAD;// this pointer will be used to load the timer with the adapted_porodoro_time when the timer is started
+volatile unsigned int *count_ptr = (volatile unsigned int *) COUNT;//this register will be used to read the current value of the timer, it will be used to calculate the remaining time when the timer is stopped
+volatile unsigned int *status_ptr = (volatile unsigned int *) STATUS;//flag tells us when timer has reached 0
 volatile unsigned int *sw0_ptr = (volatile unsigned int *) SW_BASE;
 volatile unsigned int *btns_ptr = (volatile unsigned int *) BUTTONS;
 volatile unsigned int *hex1_hex0_ptr = (volatile unsigned int *) HEX1_HEX0;
 volatile unsigned int *hex3_hex2_ptr = (volatile unsigned int *) HEX3_HEX2;
 volatile unsigned int *hex5_hex4_ptr = (volatile unsigned int *) HEX5_HEX4;
-
+typedef enum {
+    IDLE,RUNNING
+}TimerState;
+volatile TimerState state = IDLE;
 void DisplayHex(unsigned int value)
     {
         //this code has to break elapse apart into minutes, seconds, and 10ths of seconds for display
@@ -84,7 +87,7 @@ void DisplayHex(unsigned int value)
         }
         else
         {
-            DisplayHex(adapted_porodoro_time);// show total length of this porodoro session if the switch is off
+            DisplayHex(elapse);// show total length of this porodoro session if the switch is off
         }
         
     }
@@ -94,11 +97,16 @@ void DisplayHex(unsigned int value)
         // this function will be called when button 0 is pressed, it will start the timer
         // it will use adapted_porodoro_time as the time to count down from and will set is_running to 1
         if (!is_running) // only start the timer if it's not already running
-        {
-            remaining_time = adapted_porodoro_time; // set the remaining time to the adapted porodoro time
-            *load_ptr = remaining_time; // load the remaining time into the timer
-            *control_ptr = 0b11; // start the timer in continuous mode
-            is_running = 1; // set is_running to 1
+        {   
+            remaining_time = adapted_porodoro_time; // set remaining_time to adapted_porodoro_time when the timer is started
+            *load_ptr = adapted_porodoro_time; // load the timer with the adapted_porodoro_time
+            *control_ptr |= 0b1;// start the timer in continuous mode
+            if (*status_ptr & 0x1)
+            {
+                remaining_time--;// decrement remaining_time by 1 hundredth of a second
+                *status_ptr = 0x1; 
+            }
+            DisplaySelectedTime();
         }
     }
 
@@ -115,4 +123,33 @@ void DisplayHex(unsigned int value)
         *control_ptr &= ~1u; // stop the timer
         DisplaySelectedTime(); // update the display to show the selected time
         is_running = 0; // set is_running to 0
+    }
+
+    void main(void)
+    {
+        // initialize the display to show the default porodoro time
+        adapted_delta_time = 0; // at the start, there is no adaptation, so adapted_delta_time is 0
+        adapted_porodoro_time = default_porodoro_time + adapted_delta_time; // adapted_porodoro_time is just the default time at the start
+        DisplaySelectedTime(); // update the display to show the selected time
+
+        while (1)
+        {
+            int btns = ReadBtns(); // read the buttons
+            if (btns & 0b0001) // if button 0 is pressed
+            {
+                btn0_action();
+            }
+            if (btns & 0b0010) // if button 1 is pressed
+            {
+                btn1_action();
+            }
+            if (btns & 0b0100) // if button 2 is pressed
+            {
+                btn2_action();
+            }
+            if (btns & 0b1000) // if button 3 is pressed
+            {
+                btn3_action();
+            }
+        }
     }
