@@ -1,40 +1,46 @@
 #define LED_BASE	       0xFF200000
-#define HEX1_HEX0          0xFF200020 //for seconds
-#define HEX3_HEX2          0xFF200030 //for minutes
-#define HEX5_HEX4          0xFF200040 //for hours
+#define HEX3_HEX0          0xFF200020 //for minutes and seconds
+#define HEX5_HEX4          0xFF200030 //for hours
 #define SW_BASE            0xFF200050
 #define LOAD               0xFFFEC600
 #define COUNT              0xFFFEC604
 #define CONTROL            0xFFFEC608
 #define STATUS             0xFFFEC60C
-#define BUTTONS            0xFF200050
-#define BUTTON_ACTIVE_LOW 1
-volatile unsigned int stored_time;
-volatile unsigned int elapse;
-volatile char is_running;
+//#define BUTTONS            0xFF200050
+#define BUTTON_ACTIVE_LOW 1 //Is this needed?  
 volatile unsigned char second; //represents 1s place
 volatile unsigned char ten_second; //represents 10s place
 volatile unsigned char minute; //represents 1min place
 volatile unsigned char ten_minute; //represents 10min place
 volatile unsigned char hour; //represents 1hr place
-volatile unsigned int default_porodoro_time = 40 * 60 * 100; //40 minutes in hundredths of seconds as default.
-volatile unsigned int adapted_delta_time; // this will be the time that is added or subtracted from the default time based on the user's behaviour
-volatile unsigned int adapted_porodoro_time; // default_porodoro_time + adapted_delta_time.
-volatile unsigned int remaining_time;  // this will be the time that is currently counting down, it = adapted_porodoro_time when start button is pressed.
+volatile unsigned int default_pomodoro_time = 40 * 60 * 100; //40 minutes in hundredths of seconds as default.
+volatile unsigned int adapted_pomodoro_time; // default_pomodoro_time + adapted_delta_time.
+volatile unsigned int remaining_time;  // this will be the time that is currently counting down, it = adapted_pomodoro_time when start button is pressed.
+volatile unsigned int time_studied; // this is an accumulated amount for studied time.
+volatile unsigned int pomodoro_sessions = 0; // this is an accumulated amount for studied time.
+volatile unsigned int adapted_delta_time = adapted_pomodoro_time - remaining_time; // this will be the time that is added or subtracted from the default time based on the user's behaviour
+
 //setting the control register globally
 volatile unsigned int *control_ptr = (volatile unsigned int *) CONTROL;// this pointer will be used to start and stop the timer by writing to the control register
-volatile unsigned int *load_ptr = (volatile unsigned int *) LOAD;// this pointer will be used to load the timer with the adapted_porodoro_time when the timer is started
+volatile unsigned int *load_ptr = (volatile unsigned int *) LOAD;// this pointer will be used to load the timer with the adapted_pomodoro_time when the timer is started
 volatile unsigned int *count_ptr = (volatile unsigned int *) COUNT;//this register will be used to read the current value of the timer, it will be used to calculate the remaining time when the timer is stopped
 volatile unsigned int *status_ptr = (volatile unsigned int *) STATUS;//flag tells us when timer has reached 0
-volatile unsigned int *sw0_ptr = (volatile unsigned int *) SW_BASE;
+volatile unsigned int *sw_ptr = (volatile unsigned int *) SW_BASE;
 volatile unsigned int *btns_ptr = (volatile unsigned int *) BUTTONS;
-volatile unsigned int *hex1_hex0_ptr = (volatile unsigned int *) HEX1_HEX0;
-volatile unsigned int *hex3_hex2_ptr = (volatile unsigned int *) HEX3_HEX2;
+volatile unsigned int *hex3_hex0_ptr = (volatile unsigned int *) HEX3_HEX0;
 volatile unsigned int *hex5_hex4_ptr = (volatile unsigned int *) HEX5_HEX4;
+volatile unsigned int *leds_ptr = (volatile unsigned int *) LED_BASE;
+
+//setting the switches globally
+int unsigned volatile switch1 = *sw_ptr & 0x1; // read the state of switch 1
+int unsigned volatile switch2 = *sw_ptr & 0x2; // read the state of switch 2
+int unsigned volatile switch3 = *sw_ptr & 0x4; // read the state of switch 3
+//
 typedef enum {
-    IDLE,RUNNING
+    ENDED, IDLE,RUNNING
 }TimerState;
-volatile TimerState state = IDLE;
+volatile TimerState state = ENDED;
+
 void DisplayHex(unsigned int value)
     {
         //this code has to break elapse apart into minutes, seconds, and 10ths of seconds for display
@@ -73,25 +79,51 @@ void DisplayHex(unsigned int value)
         *hex5_hex4_ptr = display_word3;
     }
 
-    int ReadBtns(void)// this function will read the keys and return a 4 bit value representing which keys are pressed. The value will be 0 if no keys are pressed, 1 if key0 is pressed, 2 if key1 is pressed, 4 if key2 is pressed, and 8 if key3 is pressed. If multiple keys are pressed, the value will be the sum of the values for each key. For example, if key0 and key2 are pressed, the value will be 5 (1 + 4).
+    ReadBtns(void)// this function will read the keys and return a 4 bit value representing which keys are pressed. The value will be 0 if no keys are pressed, 1 if key0 is pressed, 2 if key1 is pressed, 4 if key2 is pressed, and 8 if key3 is pressed. If multiple keys are pressed, the value will be the sum of the values for each key. For example, if key0 and key2 are pressed, the value will be 5 (1 + 4).
     {
         int btns = *btns_ptr & 0b1111;
         return btns;
     }
-
-    void DisplaySelectedTime(void)
+    
+    void DisplaySelectedTime(int switch_index)
     {
-        if ((*sw0_ptr & 0x1) != 0)
+
+        if (switch_index == 0)
         {
+            ClearLeds(switch_index); // clear the LEDs for switch 0
             DisplayHex(remaining_time);// if the switch is on, display the remaining time
+        }
+        elseif (switch_index == 1)
+        {
+            ClearLeds(switch_index); // clear the LEDs for switch 1
+            DisplayHex(adapted_porodoro_time);// show total length of this porodoro session
         }
         else
         {
-            DisplayHex(elapse);// show total length of this porodoro session if the switch is off
+            ClearLeds(switch_index); // clear the LEDs for switch 2
+            DisplayHex(time_studied);// show the net time studied in the session. Resets at end. 
         }
-        
     }
 
+    void ClearLeds(int switch_index)
+    {
+        // this function will clear the LEDs for the given switch index
+        // for example, if switch_index is 0, it will clear the LEDs for switch 0
+        // if switch_index is 1, it will clear the LEDs for switch 1
+        // if switch_index is 2, it will clear the LEDs for switch 2
+        if (switch_index == 0)
+        {
+            *leds_ptr |= 0x1;
+        }
+        else if (switch_index == 1)
+        {
+            *leds_ptr |= 0x2;
+        }
+        else
+        {
+            *leds_ptr |= 0x4;
+        }
+    }
     void btn0_action(void)
     {
         // this function will be called when button 0 is pressed, it will start the timer
@@ -148,9 +180,25 @@ void DisplayHex(unsigned int value)
         adapted_delta_time = 0; // at the start, there is no adaptation, so adapted_delta_time is 0
         adapted_porodoro_time = default_porodoro_time + adapted_delta_time; // adapted_porodoro_time is just the default time at the start
         DisplaySelectedTime(); // update the display to show the selected time
-
+        volatile int old_sw1 = 0;
+        volatile int old_sw2 = 0;
+        volatile int old_sw3 = 0;
+        volatile int selected_sw = 0;
         while (1)
         {
+            DisplaySelectedTime(selected_sw);
+            if (switch1 != old_sw1)
+            {
+                selected_sw = 0;
+            }
+            if (switch2 != old_sw2)
+            {
+                selected_sw = 1;
+            }
+            if (switch3 != old_sw3)
+            {
+                selected_sw = 2;
+            }
             int btns = ReadBtns(); // read the buttons
             if (btns & 0b0001) // if button 0 is pressed
             {
@@ -164,5 +212,8 @@ void DisplayHex(unsigned int value)
             {
                 btn2_action();
             }
+            old_sw1 = switch1;
+            old_sw2 = switch2;
+            old_sw3 = switch3;
         }
     }
