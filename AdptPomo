@@ -14,10 +14,10 @@ volatile unsigned char minute; //represents 1min place
 volatile unsigned char ten_minute; //represents 10min place
 volatile unsigned char hour; //represents 1hr place
 volatile unsigned char ten_hour; //represents 10hr place
-volatile unsigned int default_pomodoro_time = 40 * 60 * 100; //40 minutes in hundredths of seconds as default.
-volatile unsigned int adapted_pomodoro_time; // default_pomodoro_time + adapted_delta_time.
-volatile unsigned int remaining_time;  // this will be the time that is currently counting down, it = adapted_pomodoro_time when start button is pressed.
-volatile unsigned int time_studied; // this is an accumulated amount for studied time.
+volatile int default_pomodoro_time = 40 * 60 * 100; //40 minutes in hundredths of seconds as default.
+volatile int adapted_pomodoro_time; // default_pomodoro_time + adapted_delta_time.
+volatile int remaining_time;  // this will be the time that is currently counting down, it = adapted_pomodoro_time when start button is pressed.
+volatile int time_studied; // this is an accumulated amount for studied time.
 volatile int adapted_delta_time = 0; // default_pomodoro_time 's modifier, positive is adding, negative is reducing. adapted_pomodoro_time is calculated by default_pomodoro_time + adapted_delta_time. 
 volatile unsigned int time_skipped; //this equals to the remaining_time when the break button is pressed. it's for calculating the adapted_delta_time
 
@@ -160,7 +160,17 @@ void btn1_action(void){
             DisplaySelectedTime(ReadSwitches()); // update the display to show the selected time
              // calculate new adapted_delta_time based on the remaining time and the default porodoro time
             if (time_studied < adapted_pomodoro_time) {
-                adapted_delta_time -= 2 * 60 * 100;   // minus 2 minutes if user takes a break before time up
+                adapted_delta_time -= 2 * 60 * 100;   // minus 2 minutes if user takes a break before time
+            }
+            adapted_pomodoro_time = default_pomodoro_time + adapted_delta_time;
+
+            if (adapted_pomodoro_time < 15 * 60 * 100) {//set bounds for adapted_pomodoro_time, it should be between 15 minutes and 60 minutes
+                adapted_pomodoro_time = 15 * 60 * 100;
+                adapted_delta_time = adapted_pomodoro_time - default_pomodoro_time;
+            }
+            if (adapted_pomodoro_time > 60 * 60 * 100) {
+                adapted_pomodoro_time = 60 * 60 * 100;
+                adapted_delta_time = adapted_pomodoro_time - default_pomodoro_time;
             }
             adapted_pomodoro_time = default_pomodoro_time + adapted_delta_time; // calculate new adapted_porodoro_time based on the adapted_delta_time and the default porodoro time
         }
@@ -186,9 +196,6 @@ void main(void)
         adapted_delta_time = 0; // at the start, there is no adaptation, so adapted_delta_time is 0
         adapted_pomodoro_time = default_pomodoro_time + adapted_delta_time; // adapted_porodoro_time is just the default time at the start
         DisplaySelectedTime(ReadSwitches()); // update the display to show the selected time
-        volatile int old_sw1 = 0;
-        volatile int old_sw2 = 0;
-        volatile int old_sw3 = 0;
         volatile int selected_sw = 0;
         *load_ptr=200000;//this should be 10ms
         *control_ptr = 0b11;
@@ -205,18 +212,7 @@ void main(void)
                 selected_sw = 3;
             }
             DisplaySelectedTime(selected_sw);
-            if (switch1 != old_sw1)
-            {
-                selected_sw = 0;
-            }
-            if (switch2 != old_sw2)
-            {
-                selected_sw = 1;
-            }
-            if (switch3 != old_sw3)
-            {
-                selected_sw = 3;
-            }
+            
             if (btns & 0b0001) // if button 0 is pressed
             {
                 btn0_action();
