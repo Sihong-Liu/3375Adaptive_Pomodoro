@@ -6,7 +6,7 @@
 #define COUNT              0xFFFEC604
 #define CONTROL            0xFFFEC608
 #define STATUS             0xFFFEC60C
-#define BUTTONS            0xFF200060 
+#define BUTTONS            0xFF200050 
 #define KEY_ACTIVE_LOW 1 // this revers the logic of buttons, now when pressed, it's 1.
 volatile unsigned char second; //represents 1s place
 volatile unsigned char ten_second; //represents 10s place
@@ -18,8 +18,9 @@ volatile int default_pomodoro_time = 40 * 60 * 100; //40 minutes in hundredths o
 volatile int adapted_pomodoro_time; // default_pomodoro_time + adapted_delta_time.
 volatile int remaining_time;  // this will be the time that is currently counting down, it = adapted_pomodoro_time when start button is pressed.
 volatile int time_studied; // this is an accumulated amount for studied time.
-volatile int adapted_delta_time = 0; // default_pomodoro_time 's modifier, positive is adding, negative is reducing. adapted_pomodoro_time is calculated by default_pomodoro_time + adapted_delta_time. 
 volatile unsigned int time_skipped; //this equals to the remaining_time when the break button is pressed. it's for calculating the adapted_delta_time
+
+
 
 //setting the control register globally
 volatile unsigned int *control_ptr = (volatile unsigned int *) CONTROL;// this pointer will be used to start and stop the timer by writing to the control register
@@ -31,7 +32,6 @@ volatile unsigned int *btns_ptr = (volatile unsigned int *) BUTTONS;
 volatile unsigned int *hex3_hex0_ptr = (volatile unsigned int *) HEX3_HEX0;//4 digits for seconds and minutes
 volatile unsigned int *hex5_hex4_ptr = (volatile unsigned int *) HEX5_HEX4;//2 digits for hours
 volatile unsigned int *leds_ptr = (volatile unsigned int *) LED_BASE;
-
 
 //
 typedef enum {
@@ -52,7 +52,7 @@ void DisplayHex(unsigned int value)
         ten_second       = s / 10; //2
         minute           = m % 10; //2
         ten_minute       = m / 10; //3
-        hour             = h; //1 hour
+        hour             = h % 10; //1 hour
         ten_hour         = h / 10; //0 hour
 
         static const unsigned char seven_seg[10] = {
@@ -130,22 +130,24 @@ void btn0_action(void)
         // this function will be called when button 0 is pressed, it will start the timer
         // it will use adapted_pomodoro_time as the time to count down from and will set is_running to 1
         if (state==IDLE) // only start the timer if it's not already running
-        {   
+        {  
+            *status_ptr = 0x1;
+            *load_ptr=2000000;//this should be 10ms
             *control_ptr |= 0b1;// start the timer in continuous mode
             time_studied = 0; // reset time_studied to 0 when the timer is started
             remaining_time = adapted_pomodoro_time; // set remaining_time to adapted_pomodoro_time when the timer is started
             
             state = RUNNING; // set the state to RUNNING
-            DisplaySelectedTime(ReadSwitches());
         }
         else if (state == ENDED) // if the timer has ended, we can start a new session by pressing the start button again
         {
+            *status_ptr = 0x1;
+            *load_ptr=2000000;//this should be 10ms
             *control_ptr |= 0b1;// start the timer in continuous mode
             time_studied = 0; // reset time_studied to 0 when the timer is started
             remaining_time = default_pomodoro_time; // set remaining_time to default_pomodoro_time when the timer is started
             adapted_pomodoro_time = default_pomodoro_time; // reset adapted_pomodoro_time to default_pomodoro_time when the timer is started
             state = RUNNING; // set the state to RUNNING
-            DisplaySelectedTime(ReadSwitches());
         }
     }
 
@@ -157,74 +159,78 @@ void btn1_action(void){
         if(state == RUNNING){
             *control_ptr &= ~1u; // stop the timer
             state = IDLE; // set the state to IDLE
-            DisplaySelectedTime(ReadSwitches()); // update the display to show the selected time
              // calculate new adapted_delta_time based on the remaining time and the default porodoro time
-            if (time_studied < adapted_pomodoro_time) {
-                adapted_delta_time -= 2 * 60 * 100;   // minus 2 minutes if user takes a break before time
-            }
-            adapted_pomodoro_time = default_pomodoro_time + adapted_delta_time;
+            adapted_pomodoro_time = (adapted_pomodoro_time + time_studied)/2;
 
             if (adapted_pomodoro_time < 15 * 60 * 100) {//set bounds for adapted_pomodoro_time, it should be between 15 minutes and 60 minutes
                 adapted_pomodoro_time = 15 * 60 * 100;
-                adapted_delta_time = adapted_pomodoro_time - default_pomodoro_time;
             }
             if (adapted_pomodoro_time > 60 * 60 * 100) {
                 adapted_pomodoro_time = 60 * 60 * 100;
-                adapted_delta_time = adapted_pomodoro_time - default_pomodoro_time;
             }
-            adapted_pomodoro_time = default_pomodoro_time + adapted_delta_time; // calculate new adapted_porodoro_time based on the adapted_delta_time and the default porodoro time
         }
     }
 
     void btn3_action(){
-        if(state == IDLE){
+        if(state == IDLE || state == RUNNING){
             // this function will be called when button 3 is pressed, it will reset the timer(need to press break first)
             // it will set is_running to 0 and clear adapted_delta_time and adapted_porodoro_time, and set remaining_time back to default_porodoro_time
             *control_ptr &= ~1u; // stop the timer
-            DisplaySelectedTime(ReadSwitches()); // update the display to show the selected time
             state = ENDED; // set the state to ENDED
-            adapted_delta_time = 0; // clear adapted_delta_time
             adapted_pomodoro_time = default_pomodoro_time; // reset adapted_porodoro_time to default_porodoro_time
             remaining_time = default_pomodoro_time; // set remaining_time back to default_porodoro_time
             time_studied = 0; // reset time_studied to 0
         }
     }
 
-void main(void)
+int main(void)
     {
         // initialize the display to show the default porodoro time
-        adapted_delta_time = 0; // at the start, there is no adaptation, so adapted_delta_time is 0
-        adapted_pomodoro_time = default_pomodoro_time + adapted_delta_time; // adapted_porodoro_time is just the default time at the start
-        DisplaySelectedTime(ReadSwitches()); // update the display to show the selected time
+        adapted_pomodoro_time = default_pomodoro_time ; // adapted_porodoro_time is just the default time at the start
         volatile int selected_sw = 0;
-        *load_ptr=200000;//this should be 10ms
+        DisplaySelectedTime(selected_sw); // update the display to show the selected time
+        *load_ptr=2000000;//this should be 10ms
         *control_ptr = 0b11;
         *control_ptr &= ~1u;
+        int old_sw1 = 0;
+        int old_sw2 = 0;
+        int old_sw3 = 0;
+        int old_btns = 0;
         while (1)
         {
-            int sw = ReadSwitches(); // read the switches
-            int btns = ReadBtns(); // read the buttons
-            if (sw & 0x1) {
+            unsigned int sw = ReadSwitches();
+
+            unsigned int  volatile switch1 = sw & 0x1; // read the state of switch 1
+            unsigned int  volatile switch2 = sw & 0x2; // read the state of switch 2
+            unsigned int  volatile switch3 = sw & 0x4; // read the state of switch 3
+
+            int btns = ReadBtns();               // current button state
+            int new_btns = btns & (~old_btns);  // only buttons that were just pressed
+            if (switch1 != old_sw1)
+            {
                 selected_sw = 0;
-            } else if (sw & 0x2) {
-                selected_sw = 1;
-            } else if (sw & 0x4) {
-                selected_sw = 3;
             }
-            DisplaySelectedTime(selected_sw);
+            if (switch2 != old_sw2)
+            {
+                selected_sw = 1;
+            }
+            if (switch3 != old_sw3)
+            {
+                selected_sw = 2;
+            }            
             
-            if (btns & 0b0001) // if button 0 is pressed
+            if (new_btns & 0b0001)
             {
                 btn0_action();
             }
-            if (btns & 0b0010) // if button 1 is pressed
+            if (new_btns & 0b0010)
             {
                 btn1_action();
             }
-            if (btns & 0b0100) // if button 2 is pressed
+            if (new_btns & 0b0100)
             {
             }
-            if (btns & 0b1000) // if button 3 is pressed
+            if (new_btns & 0b1000)
             {
                 btn3_action();
             }
@@ -238,5 +244,11 @@ void main(void)
                         state = ENDED;
                     }
                 }
+
+            DisplaySelectedTime(selected_sw);
+            old_sw1 = switch1;
+            old_sw2 = switch2;
+            old_sw3 = switch3;
+            old_btns = btns;
         }
     }
